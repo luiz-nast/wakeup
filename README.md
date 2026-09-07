@@ -41,6 +41,46 @@ Os units vão pra `/etc/systemd/system/`. `alarm.timer` dispara 06:00 com
 Pra desligar quando der errado: `systemctl stop alarm`. Não tem `Restart=`
 no service justamente pra isso.
 
+## A tampa do notebook (sem isso nada funciona)
+
+Eu durmo com o note fechado. Se fechar a tampa suspende, o alarme não toca —
+o `WakeSystem=true` até acorda a máquina, mas ela volta a dormir.
+
+No meu Mint (Cinnamon 6.6) é isto:
+
+```
+gsettings set org.cinnamon.settings-daemon.plugins.power lid-close-ac-action nothing
+gsettings set org.cinnamon.settings-daemon.plugins.power lid-close-battery-action nothing
+gsettings set org.cinnamon.settings-daemon.plugins.power inhibit-lid-switch true
+```
+
+Isso é por ambiente, não por distro. No GNOME o schema é
+`org.gnome.settings-daemon.plugins.power` com as mesmas chaves, mas nas
+versões novas ele ignora e quem manda é o systemd.
+
+O jeito que vale em qualquer distro com systemd, e que não depende do
+desktop estar rodando, é o logind:
+
+```
+# /etc/systemd/logind.conf
+HandleLidSwitch=ignore
+HandleLidSwitchExternalPower=ignore
+```
+
+E `sudo systemctl restart systemd-logind` (derruba a sessão gráfica, então
+faça antes de abrir as coisas).
+
+Detalhe que descobri conferindo o meu: o `logind.conf` aqui está vazio, então
+o default é `suspend` — quem segura a tampa é só o `csd-power` do Cinnamon,
+via inhibitor lock. Dá pra ver quem está segurando com:
+
+```
+systemd-inhibit --list | grep lid
+```
+
+Se um dia eu trocar de desktop ou a sessão do Cinnamon cair, a tampa volta a
+suspender e o despertador morre junto. O `logind.conf` é o cinto de segurança.
+
 ## Notas
 
 - O mp3 não está no repo. Põe o teu em `sons/alarm.mp3`.
