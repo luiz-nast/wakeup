@@ -81,6 +81,27 @@ systemd-inhibit --list | grep lid
 Se um dia eu trocar de desktop ou a sessão do Cinnamon cair, a tampa volta a
 suspender e o despertador morre junto. O `logind.conf` é o cinto de segurança.
 
+## Mudei de máquina ou de distro
+
+Antes de formatar: salvar o `sons/alarm.mp3`. Ele não está no repo e o
+`setup.sh` não baixa. O resto (`model/`, `face_landmarker.task`, `.venv/`)
+o setup rebaixa sozinho.
+
+Depois, conferir os quatro valores que estão presos na máquina antiga:
+
+```
+whoami                                          # User= no alarm.service
+id -u                                           # XDG_RUNTIME_DIR=/run/user/<isso>
+which uv                                        # caminho no main.sh
+pactl list sinks | grep -E "Name:|Active Port"  # SINK e porta no wakeup.py
+```
+
+Instalar o que não costuma vir: `mpv` (esse é o que toca a música),
+`uv`, e depois `./setup.sh`.
+
+Se o desktop não for o Cinnamon, ler a seção da tampa aí em cima — no GNOME
+novo o gsettings é ignorado e quem manda é o `logind.conf`.
+
 ## Notas
 
 - O mp3 não está no repo. Põe o teu em `sons/alarm.mp3`.
