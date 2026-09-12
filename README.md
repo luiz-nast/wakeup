@@ -42,6 +42,13 @@ Uma janela (`painel.py`) que abre sozinha quando o alarme começa:
   checagens;
 - na fase da música, "fale STOP", o nível do microfone e o que ele ouviu.
 
+![o painel enquanto a música toca](docs/painel-musica.png)
+
+![o painel durante a prova](docs/painel-prova.png)
+
+Na segunda o retângulo cinza é onde entra a câmera: é um render pra conferir
+o layout, com olhos desenhados no lugar dos meus.
+
 É um processo separado que só lê o que o `wakeup.py` publica em
 `$XDG_RUNTIME_DIR/wakeup/` (`estado.json` e o frame mais novo). Não abre
 câmera nem microfone. Se ele travar ou eu fechar a janela, o alarme nem sente
@@ -62,6 +69,10 @@ abre pelo Xwayland. Antes do login não tem display e ele fica tentando.
 Os alarmes ficam num app GTK, o `agenda.py` — "Alarmes" no menu do GNOME.
 Por enquanto ele faz o essencial: criar e apagar, só o horário, tocando todo
 dia.
+
+![a lista de alarmes](docs/agenda.png)
+
+![criando um alarme](docs/agenda-novo.png)
 
 O caminho de um alarme:
 
