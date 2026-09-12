@@ -1,0 +1,70 @@
+#!/usr/bin/env python3
+"""Transforma o alarmes.json em timers do systemd. Roda como root.
+
+Quem chama e o wakeup-sync.path (quando o arquivo muda) e o boot. O app
+(agenda.py) so escreve o json - e por isso que criar alarme nao pede senha.
+
+O json e escrito por usuario comum e isto aqui e root, entao nada de la vira
+texto de unit: o unico dado aproveitado e a hora, e so depois de casar com
+HH:MM. O resto do unit e fixo aqui embaixo.
+
+    wakeup-sync /home/fulano/.config/wakeup/alarmes.json
+"""
+import glob, json, os, re, subprocess, sys
+
+UNIT_DIR = os.environ.get("WAKEUP_UNIT_DIR", "/etc/systemd/system")  # env so pra teste
+HORA = re.compile(r"^([01][0-9]|2[0-3]):[0-5][0-9]$")
+MAX = 20  # alarme demais e dedo errado no json
+
+sh = lambda *c: subprocess.run(c, check=False)
+
+
+def horas_do_json(caminho):
+    with open(caminho) as f:
+        d = json.load(f)
+    horas = [a["hora"] for a in d["alarmes"][:MAX]
+             if isinstance(a, dict) and HORA.match(str(a.get("hora")))
+             and a.get("ativo", True)]
+    return sorted(set(horas))
+
+
+def texto_do_timer(hora):
+    return f"""# gerado pelo wakeup-sync a partir do alarmes.json - nao edite aqui
+[Unit]
+Description=despertador das {hora}
+
+[Timer]
+OnCalendar=*-*-* {hora}:00
+AccuracySec=1s
+WakeSystem=true
+
+[Install]
+WantedBy=timers.target
+"""
+
+
+def main():
+    horas = horas_do_json(sys.argv[1])  # json quebrado levanta aqui e nada muda
+    querem = {f"wakeup@{h.replace(':', '')}.timer": h for h in horas}
+    tem = {os.path.basename(p) for p in glob.glob(f"{UNIT_DIR}/wakeup@*.timer")}
+
+    for unit in sorted(tem - set(querem)):
+        sh("systemctl", "disable", "--now", unit)
+        os.remove(f"{UNIT_DIR}/{unit}")
+        print("saiu:", unit)
+
+    for unit, hora in sorted(querem.items()):
+        novo, caminho = texto_do_timer(hora), f"{UNIT_DIR}/{unit}"
+        if not os.path.exists(caminho) or open(caminho).read() != novo:
+            with open(caminho, "w") as f:
+                f.write(novo)
+            print("entrou:", unit)
+
+    sh("systemctl", "daemon-reload")
+    for unit in sorted(querem):
+        sh("systemctl", "enable", "--now", unit)
+    print("alarmes:", ", ".join(horas) or "nenhum")
+
+
+if __name__ == "__main__":
+    main()

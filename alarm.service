@@ -1,4 +1,0 @@
-[Service]
-User=tonystark
-Environment=XDG_RUNTIME_DIR=/run/user/1000
-ExecStart=/home/tonystark/.local/wakeup/main.sh
