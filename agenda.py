@@ -36,14 +36,25 @@ def salvar(horas):
 
 
 def estado(hora):
-    """Como o systemd esta vendo esse alarme agora."""
+    """Como o systemd esta vendo esse alarme agora.
+
+    O --timestamp=unix e o que faz o systemctl responder "@<segundos>". Sem
+    ele vem a data por extenso ("Sun 2026-09-13 05:30:00 -03"), que muda com
+    a versao e com o locale - e quebrava a lista inteira aqui."""
     unit = f"wakeup@{hora.replace(':', '')}.timer"
-    r = subprocess.run(["systemctl", "show", unit, "-p", "ActiveState",
-                        "-p", "NextElapseUSecRealtime"], capture_output=True, text=True)
+    try:
+        r = subprocess.run(["systemctl", "show", "--timestamp=unix", unit,
+                            "-p", "ActiveState", "-p", "NextElapseUSecRealtime"],
+                           capture_output=True, text=True)
+    except OSError:
+        return "?"
     d = dict(l.split("=", 1) for l in r.stdout.splitlines() if "=" in l)
     if d.get("ActiveState") != "active":
         return "aplicando..."
-    falta = int(d.get("NextElapseUSecRealtime") or 0) / 1e6 - time.time()
+    try:  # nada aqui vale derrubar a janela
+        falta = int(d.get("NextElapseUSecRealtime", "").lstrip("@")) - time.time()
+    except ValueError:
+        return "armado"
     if falta <= 0:
         return "armado"
     h, m = divmod(int(falta // 60), 60)
