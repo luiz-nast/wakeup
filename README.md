@@ -57,32 +57,77 @@ abre pelo Xwayland. Antes do login não tem display e ele fica tentando.
 
 `PAINEL=0 ./main.sh` roda sem janela.
 
+## A agenda (os alarmes)
+
+Os alarmes ficam num app GTK, o `agenda.py` — "Alarmes" no menu do GNOME.
+Por enquanto ele faz o essencial: criar e apagar, só o horário, tocando todo
+dia.
+
+O caminho de um alarme:
+
+```
+agenda.py  →  ~/.config/wakeup/alarmes.json  →  wakeup-sync.path (root)
+           →  wakeup-sync  →  /etc/systemd/system/wakeup@0600.timer
+           →  wakeup@0600.service  →  main.sh
+```
+
+O app só escreve o json. Quem transforma isso em timer é o `wakeup-sync`,
+que roda como root porque **`WakeSystem=true` só funciona em unit de
+sistema** — timer de usuário não tem permissão de armar o RTC
+(`CAP_WAKE_ALARM`), e sem isso o note suspenso não acorda.
+
+Criar alarme não pede senha porque o `wakeup-sync.path` fica vigiando o json
+e chama o sincronizador sozinho. O preço disso é que um arquivo que meu
+usuário escreve manda num processo root, então:
+
+- o `wakeup-sync` mora em `/usr/local/sbin/`, não aqui na home — senão
+  bastaria editar este arquivo pra rodar como root;
+- nada do json vira texto de unit. O único dado aproveitado é a hora, e só
+  depois de casar com `HH:MM`. O resto do unit é fixo no código.
+
+Como eu já tenho sudo nessa máquina, isso não é escalada de privilégio de
+verdade, é só não deixar porta aberta à toa.
+
+Instalar (idempotente, pode rodar de novo depois de um `git pull`):
+
+```
+sudo ./instalar.sh
+```
+
+Ele põe o sincronizador no lugar, escreve os units com o meu usuário e o
+caminho do repo, herda a hora do `alarm.timer` antigo pro primeiro alarme e
+remove os units antigos.
+
+Detalhes que valem o comentário:
+
+- `AccuracySec=1s` nos timers. Sem isso o default é 1 minuto, e o alarme
+  disparava uns 8s atrasado.
+- `Persistent=no`: alarme perdido não dispara atrasado no boot.
+- `flock` no `main.sh`: com dois alarmes perto um do outro, o segundo sai na
+  hora em vez de subir outro `mpv` por cima do primeiro.
+
+Falta (na ordem que eu quero): dias da semana, música e duração por alarme,
+botão de testar/parar no app, soneca.
+
 ## Rodando
 
 ```
 ./setup.sh              # deps + modelos
 ./calibra.py            # limiar de olho aberto pra minha cara
 ALVO=3 ./main.sh        # teste rápido: 3 checagens em vez de 360
+sudo ./instalar.sh      # agenda + units (ver "A agenda")
 ```
 
 `VOLUME` também dá pra trocar, mas cuidado: o volume do PipeWire é cúbico.
 `VOLUME=15%` dá -49 dB no alto-falante do note — não se ouve nada. Pra teste
 mais baixo, uns 40%.
 
-O repo tem que ficar em `~/.local/wakeup`, que é o caminho do `ExecStart` no
-`alarm.service`. Os units vão pra `/etc/systemd/system/`:
+O repo tem que ficar em `~/.local/wakeup`: é o caminho que o `instalar.sh`
+grava no `ExecStart` dos units.
 
-```
-sudo cp alarm.service alarm.timer /etc/systemd/system/
-sudo systemctl daemon-reload && sudo systemctl enable --now alarm.timer
-```
-
-`alarm.timer` dispara 06:00 com `WakeSystem=true`, então acorda o note
-suspenso de tampa fechada.
-
-Pra desligar quando der errado: `systemctl stop alarm` (ou Ctrl+C se rodou
-na mão). Os dois devolvem o som pro fone antes de sair. Não tem `Restart=` no
-service justamente pra isso.
+Pra desligar quando der errado: `systemctl stop wakeup@0600` (ou Ctrl+C se
+rodou na mão). Os dois devolvem o som pro fone antes de sair. Não tem
+`Restart=` no service justamente pra isso.
 
 ## Mint x Ubuntu
 
@@ -174,12 +219,10 @@ Antes de formatar: salvar o `sons/alarm.mp3`. Ele não está no repo e o
 `setup.sh` não baixa. O resto (`model/`, `face_landmarker.task`, `.venv/`)
 o setup rebaixa sozinho.
 
-Clonar em `~/.local/wakeup` e conferir os três valores que estão presos na
-máquina antiga:
+Clonar em `~/.local/wakeup`. O `instalar.sh` já resolve usuário, UID e
+caminho do repo sozinho; o que continua preso na máquina antiga é só um:
 
 ```
-whoami    # User= no alarm.service
-id -u     # XDG_RUNTIME_DIR=/run/user/<isso>
 which uv  # caminho no main.sh
 ```
 
@@ -190,8 +233,8 @@ sudo apt install mpv                                   # Mint
 sudo apt install mpv pulseaudio-utils libportaudio2    # Ubuntu
 ```
 
-Mais o `uv`, e depois `./setup.sh`, `./calibra.py`, os units e a tampa
-(ver [Mint x Ubuntu](#mint-x-ubuntu)).
+Mais o `uv`, e depois `./setup.sh`, `./calibra.py`, `sudo ./instalar.sh` e a
+tampa (ver [Mint x Ubuntu](#mint-x-ubuntu)).
 
 ## Notas
 
