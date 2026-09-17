@@ -152,7 +152,12 @@ def desenhar(e, frame, score, olhos, ligado):
     for i in range(fmax):
         cv2.circle(tela, (PX + 12 + i * 34, 270), 11,
                    VERMELHO if i < falhas else TRILHO, -1, cv2.LINE_AA)
-    escrever(tela, f"com {fmax} a musica volta e zera", PX, 306, 0.5, APAGADO)
+    apitando = e.get("nivel", 0)
+    if apitando >= 3:
+        escrever(tela, f"SIRENE NIVEL {apitando} - abre o olho", PX, 306,
+                 0.5, VERMELHO, 2)
+    else:
+        escrever(tela, f"com {fmax} a musica volta e zera", PX, 306, 0.5, APAGADO)
 
     escrever(tela, "OLHO AGORA", PX, 350, 0.55, APAGADO)
     if score is None:

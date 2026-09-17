@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Despertador: toca ate voce falar "stop", depois exige 30 min de cara acordada.
+"""Despertador: toca ate voce falar "stop", depois exige 1 hora de cara acordada.
 
-Quatro threads vivas o tempo todo:
-  guardiao    - so quando a musica toca: unmute + volume + alto-falante
+Cinco threads vivas o tempo todo:
+  guardiao    - musica ou sirene no ar: unmute + volume + alto-falante
   anti_shadow - o alarme inteiro: brilho da tela no maximo
   olheiro     - so na prova: le a webcam a 30fps pra nunca olhar frame velho
   vitrine     - mantem o painel.py aberto (janela com camera e placar)
+  berro       - a sirene das falhas: 3 cutuca, 4 incomoda, 5 levanta
 
 Saida de emergencia: systemctl stop alarm (devolve o fone antes de sair)
 """
@@ -14,17 +15,22 @@ import cv2, numpy as np, sounddevice as sd, mediapipe as mp
 from mediapipe.tasks.python import vision, BaseOptions
 from vosk import Model, KaldiRecognizer, SetLogLevel
 
+import sirene  # daqui do lado: os bips das falhas
+
 BASE = os.path.dirname(os.path.realpath(__file__))
 
 # dao pra sobrescrever por env so pra testar: ALVO=3 VOLUME=15% ./main.sh
-ALVO = int(os.environ.get("ALVO", 360))  # 360 x 5s = 30 min de cara acordada
+ALVO = int(os.environ.get("ALVO", 720))  # 720 x 5s = 1 hora de cara acordada
 INTERVALO = int(os.environ.get("INTERVALO", 5))
 VOLUME = os.environ.get("VOLUME", "70%")
 OLHO_FECHADO = float(os.environ.get("OLHO", 0.5))  # calibra.py ajusta isso
 FALHAS_MAX = 5
+SIRENE_A_PARTIR = 3  # falhas seguidas pra sirene ligar (3 cutuca, 4 incomoda, 5 doi)
 AMOSTRA = 1.5  # segundos de frames por checagem: a mediana ignora piscada
 WARMUP = 3     # essa webcam sai do preto so depois de ~3s
-PAINEL = os.environ.get("PAINEL", "1") != "0"  # PAINEL=0 roda sem janela
+PAINEL = os.environ.get("PAINEL", "1") != "0"    # PAINEL=0 roda sem janela
+ESCUTAR = os.environ.get("ESCUTAR", "1") != "0"  # ESCUTAR=0 pula o "stop" (teste)
+SIRENE = os.environ.get("SIRENE", "1") != "0"    # SIRENE=0 nao apita (teste)
 
 # Alto-falante do notebook: achado na hora pelo nome da porta, porque o nome
 # do sink muda com a distro e some quando o fone esta plugado.
@@ -46,9 +52,11 @@ sh = lambda *c: subprocess.run(c, check=False, capture_output=True)
 
 tocando, olhando = threading.Event(), threading.Event()
 frame_atual, mpv = [None], None
+nivel = [0]  # falhas seguidas; de SIRENE_A_PARTIR pra cima a sirene liga
 estado = {"pid": os.getpid(), "fase": "", "alvo": ALVO, "sucessos": 0,
           "falhas": 0, "falhas_max": FALHAS_MAX, "intervalo": INTERVALO,
-          "olho": OLHO_FECHADO, "mic": 0, "ouvindo": "", "checagens": []}
+          "olho": OLHO_FECHADO, "mic": 0, "ouvindo": "", "checagens": [],
+          "nivel": 0}
 
 
 def publicar(**mudou):
@@ -101,6 +109,11 @@ def devolver_fone():
     perfil_original.clear()
 
 
+def volume_agora():
+    """Sirene no ultimo nivel toca no talo, doa a quem doer."""
+    return "100%" if nivel[0] >= FALHAS_MAX else VOLUME
+
+
 def forcar_audio():
     """Fone esquecido plugado nao adianta: o som vai pro alto-falante,
     desmutado e no volume certo.
@@ -125,16 +138,20 @@ def forcar_audio():
         if ativa != porta:
             sh("pactl", "set-sink-port", sink, porta)
     sh("wpctl", "set-mute", "@DEFAULT_AUDIO_SINK@", "0")
-    sh("wpctl", "set-volume", "@DEFAULT_AUDIO_SINK@", VOLUME)
+    sh("wpctl", "set-volume", "@DEFAULT_AUDIO_SINK@", volume_agora())
 
 
 def guardiao():
-    """Enquanto a musica toca: mantem o mpv vivo, no alto-falante e no volume.
-    Mutar, trocar pro fone ou matar o mpv nao adianta - volta em 1s."""
+    """Enquanto a musica toca - ou a sirene apita - mantem o som no
+    alto-falante, desmutado e no volume. Mutar, trocar pro fone ou matar o
+    mpv nao adianta: volta em 1s."""
     global mpv
     while True:
-        if tocando.is_set():
+        if tocando.is_set() or nivel[0] >= SIRENE_A_PARTIR:
             forcar_audio()  # antes do spawn: o mpv ja nasce no alto-falante
+        elif perfil_original:
+            devolver_fone()
+        if tocando.is_set():
             if mpv is None or mpv.poll() is not None:
                 mpv = subprocess.Popen(
                     ["mpv", "--no-video", "--no-terminal", "--loop=inf",
@@ -143,7 +160,6 @@ def guardiao():
         elif mpv:
             mpv.terminate(), mpv.wait()
             mpv = None
-            devolver_fone()
         time.sleep(1)
 
 
@@ -236,9 +252,31 @@ def vitrine():
         time.sleep(2)
 
 
+def berro():
+    """A sirene das falhas. O nivel e o proprio contador de falhas seguidas,
+    entao ela piora a cada checagem perdida e cala na primeira que eu passo."""
+    ultimo = 0
+    while True:
+        n = nivel[0]
+        if n != ultimo:
+            ultimo = n
+            if n >= SIRENE_A_PARTIR:
+                log(f"sirene nivel {n}")
+        if n >= SIRENE_A_PARTIR and SIRENE:
+            try:  # trocar a saida de audio no meio do bip pode derrubar o
+                sirene.tocar(n)  # stream, e ficar sem sirene o alarme inteiro
+            except Exception as e:
+                log(f"sirene falhou ({e}), tentando de novo")
+                time.sleep(1)
+        else:
+            time.sleep(0.2)
+
+
 # ------------------------------------------------------------------ logica ---
 
 def escutar_stop():
+    if not ESCUTAR:  # teste: pula a fala e cai direto na camera
+        return
     rec = KaldiRecognizer(modelo, 16000, '["stop", "[unk]"]')
     q = queue.Queue()
     with sd.RawInputStream(samplerate=16000, blocksize=8000, dtype="int16",
@@ -281,8 +319,10 @@ def acordado():
 
 
 def sair():
-    """Ctrl+C ou systemctl stop: mata a musica e devolve o fone."""
+    """Ctrl+C ou systemctl stop: mata a musica, cala a sirene e devolve o fone."""
     tocando.clear()
+    nivel[0] = 0
+    sirene.parar()
     if mpv:
         mpv.kill()
     devolver_fone()
@@ -290,13 +330,14 @@ def sair():
 
 atexit.register(sair)
 signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))  # sem isso o atexit nao roda
-for t in (guardiao, anti_shadow, olheiro) + ((vitrine,) if PAINEL else ()):
+for t in (guardiao, anti_shadow, olheiro, berro) + ((vitrine,) if PAINEL else ()):
     threading.Thread(target=t, daemon=True).start()
 
 sucessos = 0
 while sucessos < ALVO:
     tocando.set()
-    publicar(fase="tocando", sucessos=sucessos, falhas=0, ouvindo="", mic=0)
+    nivel[0] = 0  # a musica ja e barulho suficiente
+    publicar(fase="tocando", sucessos=sucessos, falhas=0, nivel=0, ouvindo="", mic=0)
     log("tocando. fale 'stop'")
     try:
         escutar_stop()
@@ -315,7 +356,8 @@ while sucessos < ALVO:
         else:
             falhas += 1
             log(f"{motivo} ({falhas}/{FALHAS_MAX})")
-        publicar(sucessos=sucessos, falhas=falhas, checagens=(
+        nivel[0] = falhas  # 3, 4 e 5 acendem a sirene; acertar cala
+        publicar(sucessos=sucessos, falhas=falhas, nivel=nivel[0], checagens=(
             estado["checagens"] + [[ok, motivo or "ok", score]])[-30:])
         time.sleep(max(0, INTERVALO - AMOSTRA))
     olhando.clear()
@@ -324,7 +366,8 @@ while sucessos < ALVO:
         log(f"perdeu os {sucessos} pontos, voltando pra musica")
         sucessos = 0
 
-publicar(fase="acordado")
+nivel[0] = 0
+publicar(fase="acordado", nivel=0)
 log("=== acordado! bom dia ===")
 if PAINEL:
     time.sleep(8)  # da tempo do bom dia aparecer antes do systemd fechar tudo
