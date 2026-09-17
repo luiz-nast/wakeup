@@ -26,7 +26,9 @@ zera e cala na hora:
 | 5 | sirene subindo de 700 a 2200 Hz, quase sem pausa, no volume máximo |
 
 Enquanto a sirene apita, o som é forçado pro alto-falante igual na música:
-fone esquecido plugado não salva.
+fone esquecido plugado não salva. O 100% é só do nível 5 — quando a música
+volta, ou quando eu mato o alarme no meio da sirene, o volume cai pra 70% na
+mesma hora, pra não ficar preso no talo o resto do dia.
 
 Cinco threads:
 

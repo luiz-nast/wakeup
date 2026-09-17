@@ -325,6 +325,8 @@ def sair():
     sirene.parar()
     if mpv:
         mpv.kill()
+    # sair no meio da sirene nivel 5 deixava o alto-falante em 100% pra sempre
+    sh("wpctl", "set-volume", "@DEFAULT_AUDIO_SINK@", VOLUME)
     devolver_fone()
 
 
@@ -335,8 +337,11 @@ for t in (guardiao, anti_shadow, olheiro, berro) + ((vitrine,) if PAINEL else ()
 
 sucessos = 0
 while sucessos < ALVO:
-    tocando.set()
     nivel[0] = 0  # a musica ja e barulho suficiente
+    # o guardiao so passaria aqui daqui a 1s: sem isso a musica comecaria no
+    # 100% que a sirene deixou
+    sh("wpctl", "set-volume", "@DEFAULT_AUDIO_SINK@", VOLUME)
+    tocando.set()
     publicar(fase="tocando", sucessos=sucessos, falhas=0, nivel=0, ouvindo="", mic=0)
     log("tocando. fale 'stop'")
     try:
