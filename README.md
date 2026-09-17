@@ -1,6 +1,7 @@
 # wakeup
 
-Meu despertador. Toca 6h todo dia e não deixa eu voltar a dormir.
+Meu despertador. Toca todo dia na hora que eu marcar no app, e não deixa
+eu voltar a dormir.
 
 Antes eu tinha um `.sh` que só tocava um mp3. Funcionava até o dia em que eu
 aprendi a apertar mute e voltar pra cama. Esse aqui não deixa.
@@ -29,9 +30,9 @@ fone esquecido plugado não salva.
 
 Cinco threads:
 
-- **guardiao** — a cada 1s desmuta, põe o volume em 70%, joga o som pro
-  alto-falante do notebook (fone esquecido plugado não salva ninguém) e sobe
-  outro `mpv` se eu matar o processo.
+- **guardiao** — enquanto a música ou a sirene tocam, a cada 1s desmuta,
+  põe o volume em 70% (100% na sirene nível 5), joga o som pro alto-falante
+  do notebook e sobe outro `mpv` se eu matar o processo.
 - **anti_shadow** — brilho da tela no máximo o alarme inteiro.
 - **olheiro** — lê a webcam a 30fps e guarda só o frame mais novo.
 - **vitrine** — mantém o painel aberto (abaixo).
@@ -120,8 +121,8 @@ sudo ./instalar.sh
 ```
 
 Ele põe o sincronizador no lugar, escreve os units com o meu usuário e o
-caminho do repo, herda a hora do `alarm.timer` antigo pro primeiro alarme e
-remove os units antigos.
+caminho do repo, e remove os units antigos. O primeiro alarme herda a hora do
+`alarm.timer` antigo, ou nasce 06:00 numa máquina nova.
 
 Detalhes que valem o comentário:
 
@@ -156,9 +157,32 @@ escalada inteira em 10s.
 O repo tem que ficar em `~/.local/wakeup`: é o caminho que o `instalar.sh`
 grava no `ExecStart` dos units.
 
-Pra desligar quando der errado: `systemctl stop wakeup@0600` (ou Ctrl+C se
-rodou na mão). Os dois devolvem o som pro fone antes de sair. Não tem
-`Restart=` no service justamente pra isso.
+Pra desligar quando der errado: `sudo systemctl stop wakeup@0530` (o número
+é a hora do alarme sem os dois-pontos), ou Ctrl+C se rodou na mão. Os dois
+calam a sirene e devolvem o som pro fone antes de sair. Não tem `Restart=` no
+service justamente pra isso.
+
+### Testar
+
+Com tudo já configurado, o teste rápido na mão — **toca alto**, 5 checagens
+de 3s em vez de 720 de 5s:
+
+```
+cd ~/.local/wakeup && ALVO=5 INTERVALO=3 ./main.sh
+```
+
+Falo "stop", encaro a câmera até fechar os 5 pontos. Pra ouvir a sirene, é só
+desviar o olho uns 10s no meio: na terceira falha ela liga e sobe de nível a
+cada falha seguinte.
+
+Do jeito que ele roda de verdade, pelo systemd (aí é 1 hora de prova):
+
+```
+sudo systemctl start wakeup@0530
+sudo systemctl stop wakeup@0530      # o botão de pânico
+```
+
+E só a sirene, sem alarme nenhum: `./sirene.py 3`, `4` ou `5`.
 
 ## Mint x Ubuntu
 
@@ -232,7 +256,7 @@ esconder ele:
   sink `...HiFi__Speaker__sink` **não existe** — por isso o nome fixo que
   funcionava no Mint mandava o som pro fone sem dar erro. O guardião troca
   o perfil com `pactl set-card-profile` e devolve o perfil do fone quando a
-  música para (no "stop", no Ctrl+C e no `systemctl stop`).
+  música para e a sirene cala (no "stop", no Ctrl+C e no `systemctl stop`).
 
 Se mesmo no perfil certo não sair som com o fone plugado, olhar o auto-mute
 do codec — ligado, ele corta o alto-falante por hardware:
@@ -272,3 +296,5 @@ tampa (ver [Mint x Ubuntu](#mint-x-ubuntu)).
 - O mp3 não está no repo. Põe o teu em `sons/alarm.mp3`.
 - Se a tua placa chamar o alto-falante de outro nome, `pactl list sinks`
   mostra o nome da porta; troca o `ALTO_FALANTE` no `wakeup.py`.
+- Os níveis da sirene (frequência, duração, pausa e amplitude) estão numa
+  tabela só, no topo do `sirene.py`.
