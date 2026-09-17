@@ -92,18 +92,28 @@ def pactl_json(*args):
 
 
 def achar_alto_falante():
-    """(sink, porta, porta ativa) do alto-falante, ou None."""
+    """(o sink inteiro do pactl, a porta do alto-falante) ou None."""
     for s in pactl_json("list", "sinks"):
         for p in s.get("ports", []):
             if ALTO_FALANTE in p["name"]:
-                return s["name"], p["name"], s.get("active_port")
+                return s, p["name"]
     return None
 
 
-perfil_original = {}  # placa -> perfil de antes do alarme, pra devolver o fone
+# o que era meu antes do alarme mexer, pra devolver igualzinho depois
+perfil_original = {}  # placa -> perfil
+audio_original = {}   # sink -> (volumes por canal, mudo)
 
 
-def devolver_fone():
+def devolver_audio():
+    """Desfaz tudo que o alarme mexeu: volume, mudo e perfil da placa.
+
+    Volume antes do perfil: depois de voltar pro fone o sink do alto-falante
+    some, e ai nao daria mais pra ajustar ele."""
+    for sink, (volumes, mudo) in audio_original.items():
+        sh("pactl", "set-sink-volume", sink, *volumes)
+        sh("pactl", "set-sink-mute", sink, "1" if mudo else "0")
+    audio_original.clear()
     for placa, perfil in perfil_original.items():
         sh("pactl", "set-card-profile", placa, perfil)
     perfil_original.clear()
@@ -133,10 +143,14 @@ def forcar_audio():
     while not (alvo := achar_alto_falante()) and time.time() - t0 < 2:
         time.sleep(0.2)
     if alvo:
-        sink, porta, ativa = alvo
-        sh("pactl", "set-default-sink", sink)
-        if ativa != porta:
-            sh("pactl", "set-sink-port", sink, porta)
+        sink, porta = alvo
+        if sink["name"] not in audio_original:  # guarda antes de encostar
+            audio_original[sink["name"]] = (
+                [str(c["value"]) for c in sink.get("volume", {}).values()],
+                sink.get("mute", False))
+        sh("pactl", "set-default-sink", sink["name"])
+        if sink.get("active_port") != porta:
+            sh("pactl", "set-sink-port", sink["name"], porta)
     sh("wpctl", "set-mute", "@DEFAULT_AUDIO_SINK@", "0")
     sh("wpctl", "set-volume", "@DEFAULT_AUDIO_SINK@", volume_agora())
 
@@ -149,8 +163,8 @@ def guardiao():
     while True:
         if tocando.is_set() or nivel[0] >= SIRENE_A_PARTIR:
             forcar_audio()  # antes do spawn: o mpv ja nasce no alto-falante
-        elif perfil_original:
-            devolver_fone()
+        elif perfil_original or audio_original:
+            devolver_audio()
         if tocando.is_set():
             if mpv is None or mpv.poll() is not None:
                 mpv = subprocess.Popen(
@@ -319,15 +333,13 @@ def acordado():
 
 
 def sair():
-    """Ctrl+C ou systemctl stop: mata a musica, cala a sirene e devolve o fone."""
+    """Ctrl+C ou systemctl stop: mata a musica, cala a sirene e devolve o audio."""
     tocando.clear()
     nivel[0] = 0
     sirene.parar()
     if mpv:
         mpv.kill()
-    # sair no meio da sirene nivel 5 deixava o alto-falante em 100% pra sempre
-    sh("wpctl", "set-volume", "@DEFAULT_AUDIO_SINK@", VOLUME)
-    devolver_fone()
+    devolver_audio()  # devolve volume, mudo e perfil como estavam
 
 
 atexit.register(sair)
@@ -337,10 +349,10 @@ for t in (guardiao, anti_shadow, olheiro, berro) + ((vitrine,) if PAINEL else ()
 
 sucessos = 0
 while sucessos < ALVO:
+    if nivel[0] >= FALHAS_MAX:  # so quando venho da sirene no talo: o guardiao
+        # so passaria aqui daqui a 1s, e a musica comecaria em 100%
+        sh("wpctl", "set-volume", "@DEFAULT_AUDIO_SINK@", VOLUME)
     nivel[0] = 0  # a musica ja e barulho suficiente
-    # o guardiao so passaria aqui daqui a 1s: sem isso a musica comecaria no
-    # 100% que a sirene deixou
-    sh("wpctl", "set-volume", "@DEFAULT_AUDIO_SINK@", VOLUME)
     tocando.set()
     publicar(fase="tocando", sucessos=sucessos, falhas=0, nivel=0, ouvindo="", mic=0)
     log("tocando. fale 'stop'")

@@ -26,9 +26,14 @@ zera e cala na hora:
 | 5 | sirene subindo de 700 a 2200 Hz, quase sem pausa, no volume máximo |
 
 Enquanto a sirene apita, o som é forçado pro alto-falante igual na música:
-fone esquecido plugado não salva. O 100% é só do nível 5 — quando a música
-volta, ou quando eu mato o alarme no meio da sirene, o volume cai pra 70% na
-mesma hora, pra não ficar preso no talo o resto do dia.
+fone esquecido plugado não salva. Mas **só enquanto ela apita**. Quando a
+música volta, quando eu acerto uma checagem ou quando eu mato o alarme, o
+volume, o mudo e o perfil da placa voltam exatamente como estavam antes — o
+alarme guarda isso antes de encostar.
+
+Fora música e sirene, ele não toca no áudio. Com a cara sendo reconhecida e
+nada tocando, a hora de prova é minha: dá pra ouvir o que eu quiser, no
+volume que eu quiser.
 
 Cinco threads:
 
@@ -257,8 +262,9 @@ esconder ele:
   e `HiFi (HDMI1, HDMI2, HDMI3, Mic1, Mic2, Speaker)`. Com o fone plugado o
   sink `...HiFi__Speaker__sink` **não existe** — por isso o nome fixo que
   funcionava no Mint mandava o som pro fone sem dar erro. O guardião troca
-  o perfil com `pactl set-card-profile` e devolve o perfil do fone quando a
-  música para e a sirene cala (no "stop", no Ctrl+C e no `systemctl stop`).
+  o perfil com `pactl set-card-profile`, e devolve perfil, volume e mudo
+  quando a música para e a sirene cala (no "stop", no Ctrl+C e no
+  `systemctl stop`).
 
 Se mesmo no perfil certo não sair som com o fone plugado, olhar o auto-mute
 do codec — ligado, ele corta o alto-falante por hardware:
