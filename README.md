@@ -11,10 +11,23 @@ dois está em [Mint x Ubuntu](#mint-x-ubuntu).
 ## O que ele faz
 
 Toca a música até eu falar **"stop"**. Aí a webcam tem que me ver **de olho
-aberto** por 30 minutos. Se eu sumir ou cochilar 5 checagens seguidas, os
+aberto** por 1 hora. Se eu sumir ou cochilar 5 checagens seguidas, os
 pontos zeram e a música volta do começo.
 
-Quatro threads:
+Da **terceira falha seguida** em diante entra a sirene, e ela piora a cada
+falha. Conta tanto "sem rosto" quanto "olho fechado", e acertar uma checagem
+zera e cala na hora:
+
+| falhas | som |
+|--------|-----|
+| 3 | bip curto e baixo a cada 1,2s — só pra me cutucar |
+| 4 | bip duplo, onda quadrada, bem mais alto |
+| 5 | sirene subindo de 700 a 2200 Hz, quase sem pausa, no volume máximo |
+
+Enquanto a sirene apita, o som é forçado pro alto-falante igual na música:
+fone esquecido plugado não salva.
+
+Cinco threads:
 
 - **guardiao** — a cada 1s desmuta, põe o volume em 70%, joga o som pro
   alto-falante do notebook (fone esquecido plugado não salva ninguém) e sobe
@@ -22,6 +35,7 @@ Quatro threads:
 - **anti_shadow** — brilho da tela no máximo o alarme inteiro.
 - **olheiro** — lê a webcam a 30fps e guarda só o frame mais novo.
 - **vitrine** — mantém o painel aberto (abaixo).
+- **berro** — a sirene das falhas (`sirene.py`).
 
 O olheiro é o que mais deu trabalho. O V4L2 enfileira tudo: depois de 5s
 parado tinha 2000+ frames na fila, e o atraso crescia a cada ciclo — eu punha
@@ -38,8 +52,8 @@ Uma janela (`painel.py`) que abre sozinha quando o alarme começa:
 - a câmera espelhada, com o contorno dos olhos **verde** (aberto) ou
   **vermelho** (fechado), e "SEM ROSTO" quando eu saio do quadro;
 - a barra de abertura do olho agora, com a linha do limite do `OLHO`;
-- pontos, quanto falta, falhas seguidas (5 bolinhas) e as últimas 30
-  checagens;
+- pontos, quanto falta, falhas seguidas (5 bolinhas), o nível da sirene
+  quando ela liga, e as últimas 30 checagens;
 - na fase da música, "fale STOP", o nível do microfone e o que ele ouviu.
 
 ![o painel enquanto a música toca](docs/painel-musica.png)
@@ -125,13 +139,19 @@ botão de testar/parar no app, soneca.
 ```
 ./setup.sh              # deps + modelos
 ./calibra.py            # limiar de olho aberto pra minha cara
-ALVO=3 ./main.sh        # teste rápido: 3 checagens em vez de 360
+ALVO=3 ./main.sh        # teste rápido: 3 checagens em vez de 720
+./sirene.py 5           # ouvir um nível da sirene na mão (esse é o pior)
 sudo ./instalar.sh      # agenda + units (ver "A agenda")
 ```
 
 `VOLUME` também dá pra trocar, mas cuidado: o volume do PipeWire é cúbico.
 `VOLUME=15%` dá -49 dB no alto-falante do note — não se ouve nada. Pra teste
 mais baixo, uns 40%.
+
+Pra testar a prova sem falar nem acordar ninguém: `ESCUTAR=0` pula o "stop"
+e cai direto na câmera, `SIRENE=0` deixa a sirene muda (o nível continua
+aparecendo no log) e `OLHO=0` faz toda checagem falhar, que é como eu vejo a
+escalada inteira em 10s.
 
 O repo tem que ficar em `~/.local/wakeup`: é o caminho que o `instalar.sh`
 grava no `ExecStart` dos units.
