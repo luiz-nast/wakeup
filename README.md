@@ -164,8 +164,15 @@ escalada inteira em 10s.
 O repo tem que ficar em `~/.local/wakeup`: é o caminho que o `instalar.sh`
 grava no `ExecStart` dos units.
 
-Pra desligar quando der errado: `sudo systemctl stop wakeup@0530` (o número
-é a hora do alarme sem os dois-pontos), ou Ctrl+C se rodou na mão. Os dois
+Pra desligar quando der errado, às 4h da manhã e sem querer lembrar do
+horário que eu mesmo marquei:
+
+```
+sudo systemctl stop 'wakeup@*'
+```
+
+O nome do unit é a hora sem os dois-pontos (`wakeup@0430`), mas o `*` pega
+qualquer um que esteja no ar. Ou Ctrl+C, se rodou na mão. Os dois
 calam a sirene e devolvem o som pro fone antes de sair. Não tem `Restart=` no
 service justamente pra isso.
 
@@ -185,8 +192,8 @@ cada falha seguinte.
 Do jeito que ele roda de verdade, pelo systemd (aí é 1 hora de prova):
 
 ```
-sudo systemctl start wakeup@0530
-sudo systemctl stop wakeup@0530      # o botão de pânico
+sudo systemctl start wakeup@0430     # a hora do alarme, sem os dois-pontos
+sudo systemctl stop 'wakeup@*'       # o botão de pânico
 ```
 
 E só a sirene, sem alarme nenhum: `./sirene.py 3`, `4` ou `5`.
