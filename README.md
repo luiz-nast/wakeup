@@ -90,11 +90,23 @@ abre pelo Xwayland. Antes do login não tem display e ele fica tentando.
 
 Os alarmes ficam num app GTK, o `agenda.py` — "Alarmes" no menu do GNOME.
 Por enquanto ele faz o essencial: criar e apagar, só o horário, tocando todo
-dia.
+dia — e um ▶ em cada linha pra testar na hora.
 
 ![a lista de alarmes](docs/agenda.png)
 
 ![criando um alarme](docs/agenda-novo.png)
+
+O ▶ dispara o despertador ali mesmo, com 5 checagens de 3s em vez de 720 de
+5s. Música, "stop", câmera e sirene, tudo de verdade — só mais curto.
+
+![o teste rodando](docs/agenda-teste.png)
+
+**Essa janela é o único lugar do app com botão de parar.** O alarme de
+verdade não tem botão nenhum aqui, de propósito: senão eu desarmava ele da
+cama. Pra aquele é `sudo systemctl stop 'wakeup@*'`, no terminal, acordado.
+
+Fechar o app no meio de um teste também para o teste — ele não fica tocando
+sozinho. E o ▶ se recusa a começar se já tiver um despertador no ar.
 
 O caminho de um alarme:
 
@@ -140,7 +152,7 @@ Detalhes que valem o comentário:
   hora em vez de subir outro `mpv` por cima do primeiro.
 
 Falta (na ordem que eu quero): dias da semana, música e duração por alarme,
-botão de testar/parar no app, soneca.
+soneca.
 
 ## Rodando
 
@@ -178,8 +190,8 @@ service justamente pra isso.
 
 ### Testar
 
-Com tudo já configurado, o teste rápido na mão — **toca alto**, 5 checagens
-de 3s em vez de 720 de 5s:
+O jeito fácil é o ▶ na linha do alarme, no app (ver [A
+agenda](#a-agenda-os-alarmes)). No terminal, o mesmo teste — **toca alto**:
 
 ```
 cd ~/.local/wakeup && ALVO=5 INTERVALO=3 ./main.sh
