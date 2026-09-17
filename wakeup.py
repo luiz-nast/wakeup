@@ -15,7 +15,7 @@ import cv2, numpy as np, sounddevice as sd, mediapipe as mp
 from mediapipe.tasks.python import vision, BaseOptions
 from vosk import Model, KaldiRecognizer, SetLogLevel
 
-import sirene  # daqui do lado: os bips das falhas
+import audio_estado, sirene  # daqui do lado: o audio de antes, e os bips
 
 BASE = os.path.dirname(os.path.realpath(__file__))
 
@@ -100,23 +100,19 @@ def achar_alto_falante():
     return None
 
 
-# o que era meu antes do alarme mexer, pra devolver igualzinho depois
-perfil_original = {}  # placa -> perfil
-audio_original = {}   # sink -> (volumes por canal, mudo)
+# O que era meu antes do alarme mexer. O mesmo vai pro disco (audio_estado):
+# se este processo morrer no soco, quem abrir depois devolve por la.
+perfil_original = {}      # placa -> perfil
+audio_original = {}       # sink -> (volumes por canal, mudo)
+padrao_original = [None]  # sink que era a saida padrao
 
 
 def devolver_audio():
-    """Desfaz tudo que o alarme mexeu: volume, mudo e perfil da placa.
-
-    Volume antes do perfil: depois de voltar pro fone o sink do alto-falante
-    some, e ai nao daria mais pra ajustar ele."""
-    for sink, (volumes, mudo) in audio_original.items():
-        sh("pactl", "set-sink-volume", sink, *volumes)
-        sh("pactl", "set-sink-mute", sink, "1" if mudo else "0")
+    """Desfaz tudo que o alarme mexeu: volume, mudo, perfil e saida padrao."""
+    audio_estado.devolver()
     audio_original.clear()
-    for placa, perfil in perfil_original.items():
-        sh("pactl", "set-card-profile", placa, perfil)
     perfil_original.clear()
+    padrao_original[0] = None
 
 
 def volume_agora():
@@ -132,12 +128,15 @@ def forcar_audio():
       Mint   - um sink so, com porta Speaker e Headphones: troca a porta
       Ubuntu - um perfil com Speaker e outro com Headphones: com o fone
                plugado o sink do alto-falante nem existe, troca o perfil"""
+    novo = False  # so escreve no disco quando guardou coisa que ainda nao tinha
     for c in pactl_json("list", "cards"):
         if ALTO_FALANTE in c["active_profile"]:
             continue
         p = next((p for p in c["profiles"] if ALTO_FALANTE in p), None)
         if p:
-            perfil_original.setdefault(c["name"], c["active_profile"])
+            if c["name"] not in perfil_original:
+                perfil_original[c["name"]] = c["active_profile"]
+                novo = True
             sh("pactl", "set-card-profile", c["name"], p)
     t0 = time.time()  # o sink novo leva um instante pra aparecer
     while not (alvo := achar_alto_falante()) and time.time() - t0 < 2:
@@ -148,9 +147,17 @@ def forcar_audio():
             audio_original[sink["name"]] = (
                 [str(c["value"]) for c in sink.get("volume", {}).values()],
                 sink.get("mute", False))
+            novo = True
+        if padrao_original[0] is None:
+            padrao_original[0] = subprocess.run(
+                ["pactl", "get-default-sink"], capture_output=True,
+                text=True).stdout.strip()
+            novo = True
         sh("pactl", "set-default-sink", sink["name"])
         if sink.get("active_port") != porta:
             sh("pactl", "set-sink-port", sink["name"], porta)
+    if novo:
+        audio_estado.guardar(perfil_original, audio_original, padrao_original[0])
     sh("wpctl", "set-mute", "@DEFAULT_AUDIO_SINK@", "0")
     sh("wpctl", "set-volume", "@DEFAULT_AUDIO_SINK@", volume_agora())
 
@@ -341,6 +348,9 @@ def sair():
         mpv.kill()
     devolver_audio()  # devolve volume, mudo e perfil como estavam
 
+
+if audio_estado.devolver():  # sobrou de um alarme que morreu no soco
+    log("devolvi o audio que um alarme anterior deixou trocado")
 
 atexit.register(sair)
 signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))  # sem isso o atexit nao roda

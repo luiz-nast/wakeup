@@ -295,6 +295,35 @@ amixer -c 0 sget 'Auto-Mute Mode'   # aqui: Disabled
 O `pactl -f json` é chamado com `LC_ALL=C`: com locale pt ele solta acento
 no json e quebra o parse.
 
+### Quando o fone some depois de um alarme
+
+Já me aconteceu, e é o pior estrago que esse projeto sabe fazer. O alarme
+troca o **perfil da placa** pra achar o alto-falante, e o WirePlumber guarda
+perfil escolhido **em disco** (`~/.local/state/wireplumber/default-profile`).
+Então um alarme que morre no soco — `kill -9`, queda de luz, reboot no meio —
+deixa a placa no perfil do alto-falante, que não tem saída de fone nenhuma.
+Plugar o fone não adianta, trocar de fone não adianta, e reiniciar **também
+não**, porque o WirePlumber restaura o perfil errado no boot.
+
+Por isso o alarme não conta com sobreviver pra devolver: ele anota o "antes"
+em `~/.local/state/wakeup/audio-antes.json` assim que encosta no áudio
+(perfil, volume por canal, mudo e saída padrão), e só apaga essa anotação
+depois de devolver. Quem abrir depois devolve por ela — o próprio alarme ao
+subir, o app da agenda ao abrir, ou eu na mão:
+
+```
+python3 ~/.local/wakeup/audio_estado.py
+```
+
+Se nem isso (anotação perdida, ou estrago anterior a essa trava), dá pra
+devolver o perfil direto:
+
+```
+pactl list cards | grep -A1 'Active Profile'   # ver onde está
+pactl set-card-profile alsa_card.pci-0000_00_1f.3-platform-skl_hda_dsp_generic \
+  "HiFi (HDMI1, HDMI2, HDMI3, Headphones, Mic1, Mic2)"
+```
+
 ## Mudei de máquina ou de distro
 
 Antes de formatar: salvar o `sons/alarm.mp3`. Ele não está no repo e o

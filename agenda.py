@@ -12,6 +12,8 @@ linha e a janela de ~1s entre salvar e o timer existir.
 import json, os, signal, subprocess, time
 import gi
 
+import audio_estado  # daqui do lado: devolve audio que um alarme morto deixou
+
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 from gi.repository import Adw, GLib, Gtk
@@ -120,6 +122,9 @@ class Janela(Adw.ApplicationWindow):
         self.linhas, self.horas, self.teste = {}, ler(), None
         self.connect("close-request", self.ao_fechar)
         self.desenhar()
+        # se um alarme morreu no soco, o fone fica mudo ate alguem devolver
+        if not rodando() and audio_estado.devolver():
+            self.avisar("devolvi o áudio que um alarme anterior deixou trocado")
         GLib.timeout_add_seconds(2, self.atualizar)
 
     def desenhar(self):
