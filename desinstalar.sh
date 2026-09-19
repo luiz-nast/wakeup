@@ -7,6 +7,8 @@
 #
 # O repo em si fica: e so codigo, e e por ele que eu volto (sudo ./instalar.sh).
 set -e
+# o pkexec (botao do app) entra com PATH enxuto: fixo aqui pra achar runuser
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
 BASE=$(dirname "$(readlink -f "$0")")
 
 if [ "$1" = "--listar" ]; then
