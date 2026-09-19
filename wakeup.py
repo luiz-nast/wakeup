@@ -40,6 +40,29 @@ ALTO_FALANTE = "Speaker"
 PAINEL_DIR = f"{os.environ.get('XDG_RUNTIME_DIR', '/tmp')}/wakeup"
 os.makedirs(PAINEL_DIR, exist_ok=True)
 
+ALARME = os.environ.get("ALARME", "")  # a instancia do unit: "0430"
+CONFIG = os.path.expanduser("~/.config/wakeup/alarmes.json")
+
+
+def musica():
+    """O mp3 deste alarme: o que o app copiou pra ele, ou o padrao.
+
+    O app copia a musica escolhida pra dentro dele de proposito - apontar pro
+    arquivo original nao basta, que ele costuma estar em Downloads e some na
+    primeira faxina."""
+    caminho = os.environ.get("SOM", "")
+    if not caminho and ALARME:
+        try:
+            with open(CONFIG) as f:
+                caminho = next((a.get("som", "") for a in json.load(f)["alarmes"]
+                                if a.get("hora", "").replace(":", "") == ALARME), "")
+        except (OSError, ValueError, KeyError, TypeError):
+            caminho = ""
+    return caminho if caminho and os.path.exists(caminho) else f"{BASE}/sons/alarm.mp3"
+
+
+MUSICA = musica()
+
 SetLogLevel(-1)
 modelo = Model(f"{BASE}/model")
 rosto = vision.FaceLandmarker.create_from_options(vision.FaceLandmarkerOptions(
@@ -176,7 +199,7 @@ def guardiao():
             if mpv is None or mpv.poll() is not None:
                 mpv = subprocess.Popen(
                     ["mpv", "--no-video", "--no-terminal", "--loop=inf",
-                     "--volume=100", f"{BASE}/sons/alarm.mp3"],
+                     "--volume=100", MUSICA],
                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         elif mpv:
             mpv.terminate(), mpv.wait()
@@ -283,9 +306,15 @@ def berro():
             ultimo = n
             if n >= SIRENE_A_PARTIR:
                 log(f"sirene nivel {n}")
-        if n >= SIRENE_A_PARTIR and SIRENE:
+        if tocando.is_set() and not os.path.exists(MUSICA):
+            apitar = FALHAS_MAX  # sem mp3 a sirene faz as vezes da musica
+        elif n >= SIRENE_A_PARTIR and SIRENE:
+            apitar = n
+        else:
+            apitar = 0
+        if apitar:
             try:  # trocar a saida de audio no meio do bip pode derrubar o
-                sirene.tocar(n)  # stream, e ficar sem sirene o alarme inteiro
+                sirene.tocar(apitar)  # stream, e ficar sem sirene o alarme inteiro
             except Exception as e:
                 log(f"sirene falhou ({e}), tentando de novo")
                 time.sleep(1)
@@ -348,6 +377,9 @@ def sair():
         mpv.kill()
     devolver_audio()  # devolve volume, mudo e perfil como estavam
 
+
+if not os.path.exists(MUSICA):
+    log(f"AVISO: sem mp3 em {MUSICA} - a sirene faz as vezes da musica")
 
 if audio_estado.devolver():  # sobrou de um alarme que morreu no soco
     log("devolvi o audio que um alarme anterior deixou trocado")

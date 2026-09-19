@@ -90,11 +90,22 @@ abre pelo Xwayland. Antes do login não tem display e ele fica tentando.
 
 Os alarmes ficam num app GTK, o `agenda.py` — "Alarmes" no menu do GNOME.
 Por enquanto ele faz o essencial: criar e apagar, só o horário, tocando todo
-dia — e um ▶ em cada linha pra testar na hora.
+dia — com a música de cada um, e um ▶ em cada linha pra testar na hora.
 
 ![a lista de alarmes](docs/agenda.png)
 
 ![criando um alarme](docs/agenda-novo.png)
+
+**A música é copiada pra dentro do app**, pra
+`~/.local/share/wakeup/sons/<hora>.mp3`. Só apontar pro arquivo não bastava:
+ele quase sempre está em Downloads, e na primeira faxina o alarme tocaria em
+silêncio. Apagar o alarme leva a cópia junto. Sem escolher nada, toca o
+`sons/alarm.mp3` padrão.
+
+Quem diz pro despertador qual tocar é o próprio unit: o `wakeup@.service`
+passa `ALARME=%i` (a hora sem os dois-pontos), e o `wakeup.py` procura essa
+hora no json. Se o mp3 sumir mesmo assim, ele cai no padrão — e se nem o
+padrão existir, a sirene faz as vezes da música. Alarme mudo não existe.
 
 O ▶ dispara o despertador ali mesmo, com 5 checagens de 3s em vez de 720 de
 5s. Música, "stop", câmera e sirene, tudo de verdade — só mais curto.
@@ -111,24 +122,25 @@ sozinho. E o ▶ se recusa a começar se já tiver um despertador no ar.
 ### Desinstalar
 
 No ☰ do app tem **"Desinstalar do sistema…"**. Fica escondido no menu de
-propósito: tira tudo de uma vez.
+propósito: leva tudo de uma vez.
 
 ![a confirmação de desinstalar](docs/agenda-desinstalar.png)
 
-Saem os timers e services do systemd, o sincronizador do `/usr/local/sbin` e
-o atalho do menu. Com a caixinha marcada saem também os alarmes
-(`~/.config/wakeup`) e o estado (`~/.local/state/wakeup`).
+Saem os timers e services do systemd, o sincronizador do `/usr/local/sbin`, o
+atalho do menu, os alarmes (`~/.config/wakeup`), as músicas copiadas
+(`~/.local/share/wakeup`), o estado (`~/.local/state/wakeup`), o diretório de
+runtime do painel e o `__pycache__` daqui. Sem caixinha pra marcar: se é pra
+desinstalar, é pra sair limpo.
 
-**Fica esta pasta** — código, modelos, `.venv` e `sons/` — então dá pra voltar
-com `sudo ./instalar.sh`. Antes de sair ele para o que estiver tocando e
-devolve o áudio, se tiver ficado anotação pra trás.
+**Fica só esta pasta** — código, modelos, `.venv` e o `sons/alarm.mp3` — então
+dá pra voltar com `sudo ./instalar.sh`. Antes de sair ele para o que estiver
+tocando e devolve o áudio, se tiver ficado anotação pra trás.
 
 Pelo terminal é o mesmo script:
 
 ```
-./desinstalar.sh --listar        # o que existe hoje, sem apagar nada
-sudo ./desinstalar.sh            # tira do sistema
-sudo ./desinstalar.sh --config   # e apaga também os alarmes e o estado
+./desinstalar.sh --listar   # o que existe hoje, sem apagar nada
+sudo ./desinstalar.sh       # tira tudo
 ```
 
 O botão chama isso com `pkexec`, então pede senha. Aqui eu quis senha mesmo:
@@ -379,7 +391,8 @@ tampa (ver [Mint x Ubuntu](#mint-x-ubuntu)).
 
 ## Notas
 
-- O mp3 não está no repo. Põe o teu em `sons/alarm.mp3`.
+- O mp3 padrão não está no repo. Põe o teu em `sons/alarm.mp3`. A música de
+  cada alarme é escolhida no app, e mora em `~/.local/share/wakeup/sons/`.
 - Se a tua placa chamar o alto-falante de outro nome, `pactl list sinks`
   mostra o nome da porta; troca o `ALTO_FALANTE` no `wakeup.py`.
 - Os níveis da sirene (frequência, duração, pausa e amplitude) estão numa

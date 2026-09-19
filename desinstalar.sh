@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # Tira o despertador do sistema e deixa a maquina como estava antes.
 #
-#   ./desinstalar.sh --listar      # so mostra o que existe hoje (sem root)
-#   sudo ./desinstalar.sh          # units, sincronizador e atalho
-#   sudo ./desinstalar.sh --config # e tambem os alarmes e o estado
+#   ./desinstalar.sh --listar   # so mostra o que existe hoje (sem root)
+#   sudo ./desinstalar.sh       # tira tudo
 #
-# O repo em si fica: e so codigo, e e por ele que eu volto (sudo ./instalar.sh).
+# Leva tudo mesmo: units, sincronizador, atalho, alarmes, musicas copiadas e
+# estado. So o repo fica - e codigo, e e por ele que eu volto (./instalar.sh).
 set -e
 # o pkexec (botao do app) entra com PATH enxuto: fixo aqui pra achar runuser
 PATH=/usr/sbin:/usr/bin:/sbin:/bin
@@ -18,11 +18,12 @@ if [ "$1" = "--listar" ]; then
            /usr/local/sbin/wakeup-sync "$HOME/.local/share/applications/dev.nast.wakeup.desktop"; do
     [ -e "$f" ] && echo "  $f"
   done
-  echo "com --config sai tambem:"
-  for d in "$HOME/.config/wakeup" "$HOME/.local/state/wakeup"; do
-    [ -e "$d" ] && echo "  $d"
+  for d in "$HOME/.config/wakeup" "$HOME/.local/share/wakeup" \
+           "$HOME/.local/state/wakeup" "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/wakeup" \
+           "$BASE/__pycache__"; do
+    [ -e "$d" ] && echo "  $d/"
   done
-  echo "fica de qualquer jeito: $BASE (codigo, modelos, .venv, sons/)"
+  echo "fica: $BASE (codigo, modelos, .venv, sons/alarm.mp3)"
   exit 0
 fi
 
@@ -61,14 +62,13 @@ systemctl reset-failed 'wakeup*' 2>/dev/null || true
 rm -f /usr/local/sbin/wakeup-sync
 rm -f "$H/.local/share/applications/dev.nast.wakeup.desktop"
 
-# 5. alarmes e estado, so se pedirem
-if [ "$1" = "--config" ]; then
-  rm -rf "$H/.config/wakeup" "$H/.local/state/wakeup"
-  echo "apaguei tambem os alarmes e o estado"
-fi
+# 5. o que o app deixou na home: alarmes, musicas copiadas, estado e o
+#    diretorio de runtime do painel
+rm -rf "$H/.config/wakeup" "$H/.local/share/wakeup" "$H/.local/state/wakeup" \
+       "/run/user/$UID_U/wakeup" "$BASE/__pycache__"
 
-echo "desinstalado."
-echo "fica: $BASE (codigo, modelos, .venv e sons/) - volta com sudo ./instalar.sh"
-[ "$1" = "--config" ] || echo "ficam tambem os alarmes em $H/.config/wakeup"
+echo "desinstalado - alarmes, musicas copiadas e estado foram junto."
+echo "fica: $BASE (codigo, modelos, .venv e sons/alarm.mp3)"
+echo "volta com: sudo ./instalar.sh"
 echo "a tampa do note (/etc/systemd/logind.conf.d/wakeup.conf) eu deixo: e config de"
 echo "sistema, nao do despertador. Pra tirar: sudo rm esse arquivo e reiniciar."

@@ -9,7 +9,7 @@ e o wakeup-sync, que roda como root acordado pelo wakeup-sync.path quando o
 arquivo muda - por isso criar alarme aqui nao pede senha. O "aplicando..." na
 linha e a janela de ~1s entre salvar e o timer existir.
 """
-import json, os, signal, subprocess, time
+import json, os, shutil, signal, subprocess, time
 import gi
 
 import audio_estado  # daqui do lado: devolve audio que um alarme morto deixou
@@ -22,24 +22,50 @@ BASE = os.path.dirname(os.path.realpath(__file__))
 CONFIG = os.environ.get("WAKEUP_JSON",
                         os.path.expanduser("~/.config/wakeup/alarmes.json"))
 ESTADO = f"{os.environ.get('XDG_RUNTIME_DIR', '/tmp')}/wakeup/estado.json"
+SONS = os.path.expanduser("~/.local/share/wakeup/sons")  # copia das musicas
 
 # o teste é curto de propósito: 5 checagens de 3s em vez de 720 de 5s
 TESTE = {"ALVO": "5", "INTERVALO": "3"}
 
 
 def ler():
+    """[{hora, som}], em ordem de hora. som vazio = música padrão."""
     try:
         with open(CONFIG) as f:
-            return sorted({a["hora"] for a in json.load(f)["alarmes"]})
+            alarmes = json.load(f)["alarmes"]
+        return sorted(({"hora": a["hora"], "som": a.get("som", "")}
+                       for a in alarmes if isinstance(a, dict) and a.get("hora")),
+                      key=lambda a: a["hora"])
     except (OSError, ValueError, KeyError, TypeError):
         return []
 
 
-def salvar(horas):
+def salvar(alarmes):
     os.makedirs(os.path.dirname(CONFIG), exist_ok=True)
     with open(f"{CONFIG}.tmp", "w") as f:
-        json.dump({"alarmes": [{"hora": h} for h in sorted(set(horas))]}, f, indent=2)
+        json.dump({"alarmes": sorted(alarmes, key=lambda a: a["hora"])}, f, indent=2)
     os.replace(f"{CONFIG}.tmp", CONFIG)  # o root nunca le arquivo pela metade
+
+
+def copiar_som(origem, hora):
+    """Traz a música pra dentro do app.
+
+    Apontar pro arquivo não bastava: ele costuma estar em Downloads, e na
+    primeira faxina o alarme tocaria em silêncio."""
+    os.makedirs(SONS, exist_ok=True)
+    destino = os.path.join(SONS, hora.replace(":", "") + os.path.splitext(origem)[1].lower())
+    shutil.copyfile(origem, destino)
+    return destino
+
+
+def apagar_som(alarme):
+    """Some com a cópia junto com o alarme - nada de arquivo órfão."""
+    som = alarme.get("som", "")
+    if som.startswith(SONS):
+        try:
+            os.remove(som)
+        except OSError:
+            pass
 
 
 def rodando():
@@ -129,7 +155,7 @@ class Janela(Adw.ApplicationWindow):
         vista.set_content(self.toasts)
         self.set_content(vista)
 
-        self.linhas, self.horas, self.teste = {}, ler(), None
+        self.linhas, self.alarmes, self.teste = {}, ler(), None
         self.connect("close-request", self.ao_fechar)
         self.desenhar()
         # se um alarme morreu no soco, o fone fica mudo ate alguem devolver
@@ -141,9 +167,12 @@ class Janela(Adw.ApplicationWindow):
         for linha in self.linhas.values():
             self.grupo.remove(linha)
         self.linhas = {}
-        for hora in self.horas:
+        for alarme in self.alarmes:
+            hora, som = alarme["hora"], alarme.get("som", "")
             linha = Adw.ActionRow(title=f"<span size='xx-large'>{hora}</span>",
                                   subtitle="todo dia")
+            linha.set_subtitle_lines(2)
+            linha.musica = os.path.basename(som) if som else "música padrão"
             testar = Gtk.Button(icon_name="media-playback-start-symbolic",
                                 valign=Gtk.Align.CENTER,
                                 tooltip_text="testar agora (toca de verdade)")
@@ -157,12 +186,12 @@ class Janela(Adw.ApplicationWindow):
             linha.add_suffix(apagar)
             self.grupo.add(linha)
             self.linhas[hora] = linha
-        self.pilha.set_visible_child_name("lista" if self.horas else "vazio")
+        self.pilha.set_visible_child_name("lista" if self.alarmes else "vazio")
         self.atualizar()
 
     def atualizar(self):
         for hora, linha in self.linhas.items():
-            linha.set_subtitle(f"todo dia - {estado(hora)}")
+            linha.set_subtitle(f"todo dia - {estado(hora)}\n{linha.musica}")
         return GLib.SOURCE_CONTINUE
 
     def avisar(self, texto):
@@ -173,9 +202,15 @@ class Janela(Adw.ApplicationWindow):
             lower=0, upper=23, step_increment=1, value=7))
         minuto = Adw.SpinRow(title="minuto", adjustment=Gtk.Adjustment(
             lower=0, upper=59, step_increment=5, value=0))
+        som = Gtk.Button(label="Escolher…", valign=Gtk.Align.CENTER)
+        som.caminho = ""
+        som.connect("clicked", self.escolher_som)
+        linha_som = Adw.ActionRow(title="música", subtitle="sem escolher, toca a padrão")
+        linha_som.add_suffix(som)
         grupo = Adw.PreferencesGroup()
         grupo.add(hora)
         grupo.add(minuto)
+        grupo.add(linha_som)
         dialogo = Adw.AlertDialog(heading="Novo alarme",
                                   body="Toca todo dia nesse horário.")
         dialogo.set_extra_child(grupo)
@@ -183,19 +218,46 @@ class Janela(Adw.ApplicationWindow):
         dialogo.add_response("criar", "Criar")
         dialogo.set_response_appearance("criar", Adw.ResponseAppearance.SUGGESTED)
         dialogo.set_default_response("criar")
-        dialogo.connect("response", self.criar, hora, minuto)
+        dialogo.connect("response", self.criar, hora, minuto, som)
         dialogo.present(self)
 
-    def criar(self, _dialogo, resposta, hora, minuto):
+    def escolher_som(self, botao):
+        escolha = Gtk.FileDialog(title="Música do alarme")
+        filtro = Gtk.FileFilter(name="Áudio")
+        for tipo in ("audio/mpeg", "audio/x-wav", "audio/flac", "audio/ogg",
+                     "audio/mp4", "audio/aac"):
+            filtro.add_mime_type(tipo)
+        filtros = Gio.ListStore.new(Gtk.FileFilter)
+        filtros.append(filtro)
+        escolha.set_filters(filtros)
+        escolha.set_default_filter(filtro)
+        escolha.open(self, None, lambda e, r: self.som_escolhido(e, r, botao))
+
+    def som_escolhido(self, escolha, resultado, botao):
+        try:
+            arquivo = escolha.open_finish(resultado)
+        except GLib.Error:
+            return  # cancelou
+        botao.caminho = arquivo.get_path() or ""
+        if botao.caminho:
+            botao.set_label(os.path.basename(botao.caminho))
+
+    def criar(self, _dialogo, resposta, hora, minuto, som):
         if resposta != "criar":
             return
         nova = f"{int(hora.get_value()):02d}:{int(minuto.get_value()):02d}"
-        if nova in self.horas:
-            return self.avisar(f"ja tem alarme das {nova}")
-        self.horas = sorted(self.horas + [nova])
-        salvar(self.horas)
+        if any(a["hora"] == nova for a in self.alarmes):
+            return self.avisar(f"já tem alarme das {nova}")
+        copia = ""
+        if som.caminho:
+            try:
+                copia = copiar_som(som.caminho, nova)
+            except OSError as e:
+                return self.avisar(f"não consegui copiar a música: {e}")
+        self.alarmes = self.alarmes + [{"hora": nova, "som": copia}]
+        salvar(self.alarmes)
         self.desenhar()
-        self.avisar(f"alarme das {nova} criado")
+        self.avisar(f"alarme das {nova} criado" + (" com a tua música" if copia else ""))
 
     # ---- teste: o único lugar do app que para um despertador. O alarme de
     # verdade não tem botão nenhum aqui, senão eu desarmava ele da cama.
@@ -206,7 +268,8 @@ class Janela(Adw.ApplicationWindow):
             return self.avisar("o despertador já está no ar")
         try:
             self.teste = subprocess.Popen(
-                [f"{BASE}/main.sh"], env={**os.environ, **TESTE},
+                [f"{BASE}/main.sh"],
+                env={**os.environ, **TESTE, "ALARME": hora.replace(":", "")},
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                 start_new_session=True)  # sessão própria: dá pra matar o grupo
         except OSError as e:
@@ -264,30 +327,27 @@ class Janela(Adw.ApplicationWindow):
     def desinstalar(self, *_):
         if rodando():
             return self.avisar("tem despertador no ar — espera ele terminar")
-        caixa = Gtk.CheckButton(label="apagar também meus alarmes e o estado")
         dialogo = Adw.AlertDialog(
             heading="Desinstalar do sistema?",
-            body="Saem os timers e services do systemd, o sincronizador do "
-                 "/usr/local/sbin e o atalho do menu.\n\n"
-                 "Fica esta pasta, com o código, os modelos e a música — dá pra "
+            body="Leva tudo: os timers e services do systemd, o sincronizador "
+                 "do /usr/local/sbin, o atalho do menu, os teus alarmes e as "
+                 "músicas que o app copiou.\n\n"
+                 "Fica só esta pasta, com o código e os modelos — dá pra "
                  "instalar de novo com sudo ./instalar.sh.\n\n"
                  "Vai pedir tua senha.")
-        dialogo.set_extra_child(caixa)
         dialogo.add_response("nao", "Cancelar")
-        dialogo.add_response("sim", "Desinstalar")
+        dialogo.add_response("sim", "Desinstalar tudo")
         dialogo.set_response_appearance("sim", Adw.ResponseAppearance.DESTRUCTIVE)
         dialogo.set_default_response("nao")
-        dialogo.connect("response", self.confirmou, caixa)
+        dialogo.connect("response", self.confirmou)
         dialogo.present(self)
 
-    def confirmou(self, _dialogo, resposta, caixa):
+    def confirmou(self, _dialogo, resposta):
         if resposta != "sim":
             return
-        cmd = ["pkexec", f"{BASE}/desinstalar.sh"]
-        if caixa.get_active():
-            cmd.append("--config")
         try:
-            proc = subprocess.Popen(cmd, stdout=subprocess.PIPE,
+            proc = subprocess.Popen(["pkexec", f"{BASE}/desinstalar.sh"],
+                                    stdout=subprocess.PIPE,
                                     stderr=subprocess.STDOUT, text=True)
         except OSError as e:
             return self.avisar(f"não consegui chamar o pkexec: {e}")
@@ -310,8 +370,11 @@ class Janela(Adw.ApplicationWindow):
         return GLib.SOURCE_REMOVE
 
     def apagar(self, _botao, hora):
-        self.horas = [h for h in self.horas if h != hora]
-        salvar(self.horas)
+        for a in self.alarmes:
+            if a["hora"] == hora:
+                apagar_som(a)
+        self.alarmes = [a for a in self.alarmes if a["hora"] != hora]
+        salvar(self.alarmes)
         self.desenhar()
         self.avisar(f"alarme das {hora} apagado")
 
