@@ -108,6 +108,36 @@ cama. Pra aquele é `sudo systemctl stop 'wakeup@*'`, no terminal, acordado.
 Fechar o app no meio de um teste também para o teste — ele não fica tocando
 sozinho. E o ▶ se recusa a começar se já tiver um despertador no ar.
 
+### Desinstalar
+
+No ☰ do app tem **"Desinstalar do sistema…"**. Fica escondido no menu de
+propósito: tira tudo de uma vez.
+
+![a confirmação de desinstalar](docs/agenda-desinstalar.png)
+
+Saem os timers e services do systemd, o sincronizador do `/usr/local/sbin` e
+o atalho do menu. Com a caixinha marcada saem também os alarmes
+(`~/.config/wakeup`) e o estado (`~/.local/state/wakeup`).
+
+**Fica esta pasta** — código, modelos, `.venv` e `sons/` — então dá pra voltar
+com `sudo ./instalar.sh`. Antes de sair ele para o que estiver tocando e
+devolve o áudio, se tiver ficado anotação pra trás.
+
+Pelo terminal é o mesmo script:
+
+```
+./desinstalar.sh --listar        # o que existe hoje, sem apagar nada
+sudo ./desinstalar.sh            # tira do sistema
+sudo ./desinstalar.sh --config   # e apaga também os alarmes e o estado
+```
+
+O botão chama isso com `pkexec`, então pede senha. Aqui eu quis senha mesmo:
+desinstalar é raro e destrutivo, diferente do sincronizador, que roda toda vez
+que eu mexo num alarme.
+
+A tampa do note (`/etc/systemd/logind.conf.d/wakeup.conf`) eu deixo: é config
+de sistema, não do despertador.
+
 O caminho de um alarme:
 
 ```

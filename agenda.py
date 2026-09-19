@@ -16,7 +16,7 @@ import audio_estado  # daqui do lado: devolve audio que um alarme morto deixou
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
-from gi.repository import Adw, GLib, Gtk
+from gi.repository import Adw, Gio, GLib, Gtk
 
 BASE = os.path.dirname(os.path.realpath(__file__))
 CONFIG = os.environ.get("WAKEUP_JSON",
@@ -103,6 +103,16 @@ class Janela(Adw.ApplicationWindow):
         mais.connect("clicked", self.novo)
         cabecalho = Adw.HeaderBar()
         cabecalho.pack_start(mais)
+
+        # o desinstalar fica aqui no menu, longe do dedo: some o app do
+        # sistema inteiro, nao e coisa de clicar sem querer
+        menu = Gio.Menu()
+        menu.append("Desinstalar do sistema…", "win.desinstalar")
+        cabecalho.pack_end(Gtk.MenuButton(icon_name="open-menu-symbolic",
+                                          menu_model=menu, tooltip_text="mais"))
+        acao = Gio.SimpleAction.new("desinstalar", None)
+        acao.connect("activate", self.desinstalar)
+        self.add_action(acao)
 
         self.grupo = Adw.PreferencesGroup()
         pagina = Adw.PreferencesPage()
@@ -248,6 +258,56 @@ class Janela(Adw.ApplicationWindow):
         if self.teste and self.teste.poll() is None:
             self.parar_teste()  # fechar o app não deixa teste tocando sozinho
         return False
+
+    # ---- desinstalar: tira do sistema o que o instalar.sh pos
+
+    def desinstalar(self, *_):
+        if rodando():
+            return self.avisar("tem despertador no ar — espera ele terminar")
+        caixa = Gtk.CheckButton(label="apagar também meus alarmes e o estado")
+        dialogo = Adw.AlertDialog(
+            heading="Desinstalar do sistema?",
+            body="Saem os timers e services do systemd, o sincronizador do "
+                 "/usr/local/sbin e o atalho do menu.\n\n"
+                 "Fica esta pasta, com o código, os modelos e a música — dá pra "
+                 "instalar de novo com sudo ./instalar.sh.\n\n"
+                 "Vai pedir tua senha.")
+        dialogo.set_extra_child(caixa)
+        dialogo.add_response("nao", "Cancelar")
+        dialogo.add_response("sim", "Desinstalar")
+        dialogo.set_response_appearance("sim", Adw.ResponseAppearance.DESTRUCTIVE)
+        dialogo.set_default_response("nao")
+        dialogo.connect("response", self.confirmou, caixa)
+        dialogo.present(self)
+
+    def confirmou(self, _dialogo, resposta, caixa):
+        if resposta != "sim":
+            return
+        cmd = ["pkexec", f"{BASE}/desinstalar.sh"]
+        if caixa.get_active():
+            cmd.append("--config")
+        try:
+            proc = subprocess.Popen(cmd, stdout=subprocess.PIPE,
+                                    stderr=subprocess.STDOUT, text=True)
+        except OSError as e:
+            return self.avisar(f"não consegui chamar o pkexec: {e}")
+        self.avisar("desinstalando...")
+        GLib.timeout_add(500, self.vigiar_desinstalar, proc)
+
+    def vigiar_desinstalar(self, proc):
+        if proc.poll() is None:
+            return GLib.SOURCE_CONTINUE
+        saida = (proc.communicate()[0] or "").strip()
+        if proc.returncode == 0:
+            pronto = Adw.AlertDialog(heading="Desinstalado", body=saida or "pronto")
+            pronto.add_response("fechar", "Fechar o app")
+            pronto.connect("response", lambda *_: self.close())
+            pronto.present(self)
+        elif proc.returncode in (126, 127):  # senha cancelada ou negada
+            self.avisar("desinstalação cancelada")
+        else:
+            self.avisar(f"não deu certo: {saida.splitlines()[-1] if saida else proc.returncode}")
+        return GLib.SOURCE_REMOVE
 
     def apagar(self, _botao, hora):
         self.horas = [h for h in self.horas if h != hora]
